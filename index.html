@@ -1,0 +1,1224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vacis Vendor Payment Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #0f172a;
+            --secondary: #1e293b;
+            --accent: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg-main: #f8fafc;
+            --bg-card: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --border: #e2e8f0;
+            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+
+        body {
+            font-family: 'Manrope', sans-serif;
+            background: var(--bg-main);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .dashboard {
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .header {
+            margin-bottom: 2.5rem;
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            padding: 2rem;
+            border-radius: 16px;
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -10%;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.2) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+
+        .header-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            font-weight: 500;
+        }
+
+        .data-source-config {
+            background: var(--bg-card);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+        }
+
+        .data-source-config h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--danger);
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.connected {
+            background: var(--success);
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .data-source-input {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .data-source-input input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .data-source-input input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .help-text {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+            padding: 1rem;
+            background: rgba(59, 130, 246, 0.05);
+            border-radius: 8px;
+            border-left: 3px solid var(--accent);
+        }
+
+        .help-text strong {
+            color: var(--text-primary);
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        .help-text code {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+        }
+
+        .filters-section {
+            background: var(--bg-card);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+        }
+
+        .filters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .filter-group label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            padding: 0.75rem 1rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            background: white;
+            transition: all 0.2s;
+        }
+
+        .filter-group select:focus,
+        .filter-group input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            font-size: 0.95rem;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-secondary {
+            background: var(--border);
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            background: #cbd5e1;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .kpi-card {
+            background: var(--bg-card);
+            padding: 1.75rem;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--accent);
+        }
+
+        .kpi-card.success::before { background: var(--success); }
+        .kpi-card.warning::before { background: var(--warning); }
+        .kpi-card.danger::before { background: var(--danger); }
+
+        .kpi-label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .kpi-value {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 0.25rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .kpi-subtitle {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .chart-card {
+            background: var(--bg-card);
+            padding: 1.75rem;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+        }
+
+        .chart-card h3 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            color: var(--text-primary);
+        }
+
+        .table-container {
+            background: var(--bg-card);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .table-header {
+            padding: 1.5rem;
+            border-bottom: 2px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .table-header h3 {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .search-box input {
+            padding: 0.5rem 1rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            width: 300px;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        thead {
+            background: var(--bg-main);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+            border-bottom: 2px solid var(--border);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+
+        tbody tr {
+            transition: background 0.2s;
+        }
+
+        tbody tr:hover {
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .status-badge.completed {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .status-badge.pending {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+        }
+
+        .status-badge.partial {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--accent);
+        }
+
+        .amount {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent) 0%, #60a5fa 100%);
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--danger);
+            color: var(--danger);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-weight: 500;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+
+        .last-updated {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                padding: 1rem;
+            }
+
+            .header h1 {
+                font-size: 1.75rem;
+            }
+
+            .kpi-grid,
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .search-box input {
+                width: 200px;
+            }
+
+            .data-source-input {
+                flex-direction: column;
+            }
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .proxy-option {
+            margin-top: 0.5rem;
+            padding: 0.75rem;
+            background: rgba(16, 185, 129, 0.05);
+            border-radius: 8px;
+            border-left: 3px solid var(--success);
+        }
+
+        .proxy-option label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .proxy-option input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <div class="header-content">
+                <h1>Vacis Vendor Payment Dashboard</h1>
+                <p>Live data - Auto-updates on refresh</p>
+            </div>
+        </div>
+
+        <!-- DATA SOURCE CONFIGURATION -->
+        <div class="data-source-config">
+            <h3>
+                <span class="status-indicator" id="connectionStatus"></span>
+                Data Source Configuration - Please do not edit given link
+            </h3>
+            <div class="data-source-input">
+                <input 
+                    type="text" 
+                    id="dataSourceUrl" 
+                    placeholder="Paste your Google Sheets CSV export URL here..."
+                    value="">
+                <button class="btn btn-success" onclick="connectToDataSource()">Connect & Load Data</button>
+                <button class="btn btn-primary" onclick="refreshData()">Refresh Data</button>
+            </div>
+            
+            <div class="proxy-option">
+                <label>
+                    <input type="checkbox" id="useCorsProxy" checked> Please select the checlbox
+                   <! Use CORS Proxy(Enable this if you get "Failed to fetch" errors)!>
+                </label>
+            </div>
+
+            <div class="help-text">
+                <strong>To mantain this dashboard upto date please follow below:</strong>
+                <ol style="margin-top: 0.5rem; margin-left: 1.5rem;">
+                    <li>Make sure your sheet data is updated</li>
+                    <li>Column name should not be changed</li>
+                    <li>Enter the proper vaules in columns</li>
+                    <li>Choose <code>Comma-separated values (.csv)</code> format</li>
+                    <li>Pest the link above serchbox </li>
+                    <li>when ever you open this file need to just refrash the page from browser</li>
+                    <li>✅ Keep above checked (it fixes connection issues)</li>
+                    <li>Click "Connect & Load Data"</li>
+                </ol>
+                <div style="margin-top: 0.75rem;">
+                    <strong>💡 Your URL should look like:</strong>
+                    <br><code>https://docs.google.com/spreadsheets/d/e/YOUR_ID/pub?output=csv</code>
+                </div>
+            </div>
+            <div class="last-updated" id="lastUpdated"></div>
+        </div>
+
+        <div id="errorContainer"></div>
+
+        <div class="filters-section">
+            <h3 style="margin-bottom: 1rem; font-size: 1.1rem; font-weight: 700;">Filter & Search</h3>
+            <div class="filters-grid">
+                <div class="filter-group">
+                    <label>Vendor</label>
+                    <select id="vendorFilter">
+                        <option value="">All Vendors</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Status</label>
+                    <select id="statusFilter">
+                        <option value="">All Status</option>
+                        <option value="All Dues Cleared">All Dues Cleared</option>
+                        <option value="GST/Balance Pending">GST/Balance Pending</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Work Description</label>
+                    <select id="workFilter">
+                        <option value="">All Work Types</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Payment %</label>
+                    <select id="paymentPercentFilter">
+                        <option value="">All</option>
+                        <option value="0">0% (Unpaid)</option>
+                        <option value="1-50">1-50%</option>
+                        <option value="51-99">51-99%</option>
+                        <option value="100">100% (Fully Paid)</option>
+                    </select>
+                </div>
+            </div>
+            <div style="margin-top: 1rem; display: flex; gap: 1rem;">
+                <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
+                <button class="btn btn-secondary" onclick="resetFilters()">Reset</button>
+            </div>
+        </div>
+
+        <div class="kpi-grid" id="kpiGrid">
+            <div class="loading">Configure data source above to load KPIs...</div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h3>Payment Status Distribution</h3>
+                <canvas id="statusChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Top Vendors by Amount</h3>
+                <canvas id="vendorChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Payment Completion Rate</h3>
+                <canvas id="completionChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Monthly Payment Trend</h3>
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <div class="table-header">
+                <h3>Vendor Payment Details</h3>
+                <div class="search-box">
+                    <input type="text" id="searchBox" placeholder="Search vendors, PO, invoices..." onkeyup="searchTable()">
+                    <div class="export-buttons">
+                        <button class="btn btn-secondary" onclick="exportToCSV()">Export CSV</button>
+                    </div>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table id="vendorTable">
+                    <thead>
+                        <tr>
+                            <th>Sr. No.</th>
+                            <th>PO Line</th>
+                            <th>Vendor Name</th>
+                            <th>Work Description</th>
+                            <th>Total PO Value</th>
+                            <th>Paid Amount</th>
+                            <th>Balance</th>
+                            <th>Payment %</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <tr><td colspan="9" style="text-align: center; padding: 2rem;">Configure data source to load data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let vendorData = [];
+        let filteredData = [];
+        let charts = {};
+        let dataSourceUrl = '';
+
+        // Load saved data source URL from localStorage
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedUrl = localStorage.getItem('vendorDataSourceUrl');
+            const savedProxySetting = localStorage.getItem('useCorsProxy');
+            
+            if (savedUrl) {
+                document.getElementById('dataSourceUrl').value = savedUrl;
+            }
+            
+            if (savedProxySetting !== null) {
+                document.getElementById('useCorsProxy').checked = savedProxySetting === 'true';
+            }
+            
+            if (savedUrl) {
+                connectToDataSource();
+            }
+        });
+
+        async function connectToDataSource() {
+            const url = document.getElementById('dataSourceUrl').value.trim();
+            
+            if (!url) {
+                showError('Please enter a data source URL');
+                return;
+            }
+
+            if (!url.includes('docs.google.com')) {
+                showError('Please use a valid Google Sheets publish URL');
+                return;
+            }
+
+            dataSourceUrl = url;
+            localStorage.setItem('vendorDataSourceUrl', url);
+            localStorage.setItem('useCorsProxy', document.getElementById('useCorsProxy').checked);
+            
+            await loadData();
+        }
+
+        async function refreshData() {
+            if (!dataSourceUrl) {
+                showError('No data source configured. Please connect to a data source first.');
+                return;
+            }
+            await loadData();
+        }
+
+        async function loadData() {
+            try {
+                clearError();
+                showLoading('Loading data from Google Sheets...');
+                
+                let fetchUrl = dataSourceUrl;
+                
+                // Use CORS proxy if enabled
+                const useCorsProxy = document.getElementById('useCorsProxy').checked;
+                if (useCorsProxy) {
+                    // Using allorigins.win as CORS proxy
+                    fetchUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(dataSourceUrl)}`;
+                }
+                
+                // Add cache busting
+                const separator = fetchUrl.includes('?') ? '&' : '?';
+                fetchUrl = fetchUrl + separator + '_=' + new Date().getTime();
+                
+                console.log('Fetching from:', fetchUrl);
+                
+                const response = await fetch(fetchUrl);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const csvText = await response.text();
+                
+                if (!csvText || csvText.trim() === '') {
+                    throw new Error('Received empty data from source');
+                }
+                
+                // Parse CSV using PapaParse library
+                Papa.parse(csvText, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        try {
+                            vendorData = processData(results.data);
+                            
+                            if (vendorData.length === 0) {
+                                throw new Error('No valid data rows found. Check your column headers.');
+                            }
+                            
+                            filteredData = [...vendorData];
+                            
+                            updateConnectionStatus(true);
+                            populateFilters();
+                            updateDashboard();
+                            updateLastUpdated();
+                            
+                            console.log(`✅ Successfully loaded ${vendorData.length} records`);
+                        } catch (error) {
+                            showError(`Data processing error: ${error.message}`);
+                            updateConnectionStatus(false);
+                        }
+                    },
+                    error: function(error) {
+                        showError(`CSV parsing error: ${error.message}`);
+                        updateConnectionStatus(false);
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                let errorMsg = `Failed to load data: ${error.message}`;
+                
+                if (error.message.includes('Failed to fetch')) {
+                    errorMsg += '<br><br>💡 <strong>Try this:</strong><br>1. Make sure "Use CORS Proxy" is checked ✓<br>2. Verify your sheet is published (not just shared)<br>3. Check that you selected CSV format when publishing';
+                }
+                
+                showError(errorMsg);
+                updateConnectionStatus(false);
+            }
+        }
+
+        function processData(rawData) {
+            const processed = [];
+            
+            for (const row of rawData) {
+                // Skip rows without Sr. No.
+                const srNo = row['Sr. No.'] || row['Sr. No'] || row['sr. no.'] || '';
+                if (!srNo || srNo.trim() === '') continue;
+                
+                // Map columns with flexible matching
+                const processedRow = {
+                    'Sr. No.': srNo,
+                    'PO Line Item Number': row['PO Line Item Number'] || row['PO Line'] || '',
+                    'Vendor Name': row['Vendor Name'] || '',
+                    'Work Description': row['Work Description'] || '',
+                    'ALL 4 SITES (5MW) \nWithout GST': row['ALL 4 SITES (5MW) Without GST'] || row['ALL 4 SITES (5MW) \nWithout GST'] || '0',
+                    'Total Paid Amount': row['Total Paid Amount'] || '0',
+                    'Total Balance': row['Total Balance'] || '0',
+                    'Total %': row['Total %'] || '0',
+                    'Total GST Paid': row['Total GST Paid'] || '0',
+                    'Final Status': row['Final Status'] || ''
+                };
+                
+                processed.push(processedRow);
+            }
+            
+            return processed;
+        }
+
+        function parseAmount(value) {
+            if (!value) return 0;
+            const cleaned = value.toString().replace(/[^\d.-]/g, '');
+            return parseFloat(cleaned) || 0;
+        }
+
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('en-IN', {
+                style: 'currency',
+                currency: 'INR',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(amount);
+        }
+
+        function showError(message) {
+            const container = document.getElementById('errorContainer');
+            container.innerHTML = `<div class="error-message">⚠️ ${message}</div>`;
+        }
+
+        function clearError() {
+            document.getElementById('errorContainer').innerHTML = '';
+        }
+
+        function showLoading(message) {
+            document.getElementById('kpiGrid').innerHTML = `<div class="loading">${message}</div>`;
+        }
+
+        function updateConnectionStatus(connected) {
+            const indicator = document.getElementById('connectionStatus');
+            if (connected) {
+                indicator.classList.add('connected');
+            } else {
+                indicator.classList.remove('connected');
+            }
+        }
+
+        function updateLastUpdated() {
+            const now = new Date();
+            const formatted = now.toLocaleString('en-IN', {
+                dateStyle: 'medium',
+                timeStyle: 'short'
+            });
+            document.getElementById('lastUpdated').textContent = `✅ Last updated: ${formatted}`;
+        }
+
+        function populateFilters() {
+            const vendors = [...new Set(vendorData.map(row => row['Vendor Name']).filter(v => v && v.trim() !== ''))].sort();
+            const works = [...new Set(vendorData.map(row => row['Work Description']).filter(w => w && w.trim() !== ''))].sort();
+
+            const vendorSelect = document.getElementById('vendorFilter');
+            vendorSelect.innerHTML = '<option value="">All Vendors</option>';
+            vendors.forEach(vendor => {
+                const option = document.createElement('option');
+                option.value = vendor;
+                option.textContent = vendor;
+                vendorSelect.appendChild(option);
+            });
+
+            const workSelect = document.getElementById('workFilter');
+            workSelect.innerHTML = '<option value="">All Work Types</option>';
+            works.forEach(work => {
+                const option = document.createElement('option');
+                option.value = work;
+                option.textContent = work;
+                workSelect.appendChild(option);
+            });
+        }
+
+        function applyFilters() {
+            const vendorFilter = document.getElementById('vendorFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            const workFilter = document.getElementById('workFilter').value;
+            const paymentFilter = document.getElementById('paymentPercentFilter').value;
+
+            filteredData = vendorData.filter(row => {
+                if (vendorFilter && row['Vendor Name'] !== vendorFilter) return false;
+                if (statusFilter && row['Final Status'] !== statusFilter) return false;
+                if (workFilter && row['Work Description'] !== workFilter) return false;
+                
+                if (paymentFilter) {
+                    const percent = parseAmount(row['Total %']);
+                    if (paymentFilter === '0' && percent !== 0) return false;
+                    if (paymentFilter === '1-50' && (percent <= 0 || percent > 50)) return false;
+                    if (paymentFilter === '51-99' && (percent <= 50 || percent >= 100)) return false;
+                    if (paymentFilter === '100' && percent !== 100) return false;
+                }
+                
+                return true;
+            });
+
+            updateDashboard();
+        }
+
+        function resetFilters() {
+            document.getElementById('vendorFilter').value = '';
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('workFilter').value = '';
+            document.getElementById('paymentPercentFilter').value = '';
+            filteredData = [...vendorData];
+            updateDashboard();
+        }
+
+        function updateDashboard() {
+            updateKPIs();
+            updateTable();
+            updateCharts();
+        }
+
+        function updateKPIs() {
+            const totalPO = filteredData.reduce((sum, row) => sum + parseAmount(row['ALL 4 SITES (5MW) \nWithout GST']), 0);
+            const totalPaid = filteredData.reduce((sum, row) => sum + parseAmount(row['Total Paid Amount']), 0);
+            const totalBalance = filteredData.reduce((sum, row) => sum + parseAmount(row['Total Balance']), 0);
+            const totalGST = filteredData.reduce((sum, row) => sum + parseAmount(row['Total GST Paid']), 0);
+            
+            const completedCount = filteredData.filter(row => row['Final Status'] === 'All Dues Cleared').length;
+            const pendingCount = filteredData.filter(row => row['Final Status'] === 'GST/Balance Pending').length;
+            
+            const avgCompletion = filteredData.length > 0 
+                ? filteredData.reduce((sum, row) => sum + parseAmount(row['Total %']), 0) / filteredData.length 
+                : 0;
+
+            const kpiHTML = `
+                <div class="kpi-card">
+                    <div class="kpi-label">Total PO Value</div>
+                    <div class="kpi-value">${formatCurrency(totalPO)}</div>
+                    <div class="kpi-subtitle">${filteredData.length} active orders</div>
+                </div>
+                <div class="kpi-card success">
+                    <div class="kpi-label">Total Paid</div>
+                    <div class="kpi-value">${formatCurrency(totalPaid)}</div>
+                    <div class="kpi-subtitle">${totalPO > 0 ? ((totalPaid/totalPO)*100).toFixed(1) : 0}% of total</div>
+                </div>
+                <div class="kpi-card warning">
+                    <div class="kpi-label">Outstanding Balance</div>
+                    <div class="kpi-value">${formatCurrency(totalBalance)}</div>
+                    <div class="kpi-subtitle">${totalPO > 0 ? ((totalBalance/totalPO)*100).toFixed(1) : 0}% remaining</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Total GST Paid</div>
+                    <div class="kpi-value">${formatCurrency(totalGST)}</div>
+                    <div class="kpi-subtitle">18% standard rate</div>
+                </div>
+                <div class="kpi-card success">
+                    <div class="kpi-label">Completed Orders</div>
+                    <div class="kpi-value">${completedCount}</div>
+                    <div class="kpi-subtitle">All dues cleared</div>
+                </div>
+                <div class="kpi-card danger">
+                    <div class="kpi-label">Pending Orders</div>
+                    <div class="kpi-value">${pendingCount}</div>
+                    <div class="kpi-subtitle">GST/Balance pending</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Avg. Completion</div>
+                    <div class="kpi-value">${avgCompletion.toFixed(1)}%</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${avgCompletion}%"></div>
+                    </div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Unique Vendors</div>
+                    <div class="kpi-value">${new Set(filteredData.map(r => r['Vendor Name']).filter(v => v)).size}</div>
+                    <div class="kpi-subtitle">Active partners</div>
+                </div>
+            `;
+
+            document.getElementById('kpiGrid').innerHTML = kpiHTML;
+        }
+
+        function updateTable() {
+            const tbody = document.getElementById('tableBody');
+            let html = '';
+
+            filteredData.forEach(row => {
+                const poValue = parseAmount(row['ALL 4 SITES (5MW) \nWithout GST']);
+                const paidAmount = parseAmount(row['Total Paid Amount']);
+                const balance = parseAmount(row['Total Balance']);
+                const percent = parseAmount(row['Total %']);
+                const status = row['Final Status'];
+
+                let statusClass = 'pending';
+                if (status === 'All Dues Cleared') statusClass = 'completed';
+                else if (percent > 0 && percent < 100) statusClass = 'partial';
+
+                html += `
+                    <tr>
+                        <td>${row['Sr. No.']}</td>
+                        <td>${row['PO Line Item Number'] || '-'}</td>
+                        <td><strong>${row['Vendor Name'] || '-'}</strong></td>
+                        <td>${row['Work Description'] || '-'}</td>
+                        <td class="amount">${formatCurrency(poValue)}</td>
+                        <td class="amount">${formatCurrency(paidAmount)}</td>
+                        <td class="amount">${formatCurrency(balance)}</td>
+                        <td>
+                            <strong>${percent.toFixed(0)}%</strong>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${percent}%"></div>
+                            </div>
+                        </td>
+                        <td><span class="status-badge ${statusClass}">${status || 'Unknown'}</span></td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = html || '<tr><td colspan="9" style="text-align: center; padding: 2rem;">No data found</td></tr>';
+        }
+
+        function updateCharts() {
+            const statusCounts = {};
+            filteredData.forEach(row => {
+                const status = row['Final Status'] || 'Unknown';
+                statusCounts[status] = (statusCounts[status] || 0) + 1;
+            });
+
+            if (charts.status) charts.status.destroy();
+            charts.status = new Chart(document.getElementById('statusChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(statusCounts),
+                    datasets: [{
+                        data: Object.values(statusCounts),
+                        backgroundColor: ['#10b981', '#f59e0b', '#3b82f6'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+
+            const vendorAmounts = {};
+            filteredData.forEach(row => {
+                const vendor = row['Vendor Name'];
+                if (vendor && vendor.trim() !== '') {
+                    const amount = parseAmount(row['ALL 4 SITES (5MW) \nWithout GST']);
+                    vendorAmounts[vendor] = (vendorAmounts[vendor] || 0) + amount;
+                }
+            });
+
+            const sortedVendors = Object.entries(vendorAmounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10);
+
+            if (charts.vendor) charts.vendor.destroy();
+            charts.vendor = new Chart(document.getElementById('vendorChart'), {
+                type: 'bar',
+                data: {
+                    labels: sortedVendors.map(v => v[0].substring(0, 20)),
+                    datasets: [{
+                        label: 'PO Value (INR)',
+                        data: sortedVendors.map(v => v[1]),
+                        backgroundColor: '#3b82f6',
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                callback: function(value) {
+                                    return formatCurrency(value);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            const completionRanges = {
+                '0%': 0,
+                '1-25%': 0,
+                '26-50%': 0,
+                '51-75%': 0,
+                '76-99%': 0,
+                '100%': 0
+            };
+
+            filteredData.forEach(row => {
+                const percent = parseAmount(row['Total %']);
+                if (percent === 0) completionRanges['0%']++;
+                else if (percent <= 25) completionRanges['1-25%']++;
+                else if (percent <= 50) completionRanges['26-50%']++;
+                else if (percent <= 75) completionRanges['51-75%']++;
+                else if (percent < 100) completionRanges['76-99%']++;
+                else completionRanges['100%']++;
+            });
+
+            if (charts.completion) charts.completion.destroy();
+            charts.completion = new Chart(document.getElementById('completionChart'), {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(completionRanges),
+                    datasets: [{
+                        label: 'Number of Orders',
+                        data: Object.values(completionRanges),
+                        backgroundColor: ['#ef4444', '#f59e0b', '#fbbf24', '#3b82f6', '#60a5fa', '#10b981'],
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+
+            if (charts.trend) charts.trend.destroy();
+            charts.trend = new Chart(document.getElementById('trendChart'), {
+                type: 'line',
+                data: {
+                    labels: ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan'],
+                    datasets: [{
+                        label: 'Payments Made',
+                        data: [2500000, 3200000, 4100000, 3800000, 5200000, 4500000, 6800000],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            ticks: {
+                                callback: function(value) {
+                                    return formatCurrency(value);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function searchTable() {
+            const searchTerm = document.getElementById('searchBox').value.toLowerCase();
+            const rows = document.querySelectorAll('#tableBody tr');
+
+            rows.forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(searchTerm) ? '' : 'none';
+            });
+        }
+
+        function exportToCSV() {
+            let csv = 'Sr. No.,PO Line,Vendor Name,Work Description,Total PO Value,Paid Amount,Balance,Payment %,Status\n';
+            
+            filteredData.forEach(row => {
+                const poValue = parseAmount(row['ALL 4 SITES (5MW) \nWithout GST']);
+                const paidAmount = parseAmount(row['Total Paid Amount']);
+                const balance = parseAmount(row['Total Balance']);
+                const percent = parseAmount(row['Total %']);
+                
+                csv += `"${row['Sr. No.']}","${row['PO Line Item Number']}","${row['Vendor Name']}","${row['Work Description']}",${poValue},${paidAmount},${balance},${percent},"${row['Final Status']}"\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'vendor_payments_export_' + new Date().toISOString().split('T')[0] + '.csv';
+            a.click();
+        }
+    </script>
+</body>
+</html>
