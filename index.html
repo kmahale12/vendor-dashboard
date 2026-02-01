@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Vacis Vendor Payment Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -459,7 +459,7 @@
         }
 
         .error-message {
-            background: rgba(239, 68, 68, 0.1);
+            background: rgba(239, 68, 68, 0.07);
             border: 1px solid var(--danger);
             color: var(--danger);
             padding: 1rem;
@@ -530,6 +530,15 @@
             height: 18px;
             cursor: pointer;
         }
+
+        /* --- HIDE items requested by user --- */
+        .search-box {
+            display: none !important; /* hides top-right search + export CSV */
+        }
+
+        .help-text {
+            display: none !important; /* hides the instruction/help block */
+        }
     </style>
 </head>
 <body>
@@ -545,18 +554,18 @@
         <div class="data-source-config">
             <h3>
                 <span class="status-indicator" id="connectionStatus"></span>
-                Data Source Configuration - Please do not edit given link
+                <!--Data Source Configuration - Please do not edit given link--!>
             </h3>
             <div class="data-source-input">
-                <input 
-                    type="text" 
-                    id="dataSourceUrl" 
-                    placeholder="Paste your Google Sheets CSV export URL here..."
+                <!-- Hidden input: embedded link is injected by script when needed -->
+                <input
+                    type="hidden"
+                    id="dataSourceUrl"
                     value="">
                 <button class="btn btn-success" onclick="connectToDataSource()">Connect & Load Data</button>
                 <button class="btn btn-primary" onclick="refreshData()">Refresh Data</button>
             </div>
-            
+
             <div class="proxy-option">
                 <label>
                     <input type="checkbox" id="useCorsProxy" checked> Please select the checlbox
@@ -683,32 +692,36 @@
     </div>
 
     <script>
+        // Embedded CSV link (not visible in the UI). Requested by user.
+        const EMBEDDED_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTOoRnHpsJuf7gC08-nQVwZa3SdnM2oO-K_pVRcjzAUet2yzGFNUY_9I0LPnurTKhtCBuccwGTSvOLw/pub?output=csv";
+
         let vendorData = [];
         let filteredData = [];
         let charts = {};
         let dataSourceUrl = '';
 
-        // Load saved data source URL from localStorage
+        // Load saved data source URL from localStorage and auto-connect (if none saved)
         window.addEventListener('DOMContentLoaded', () => {
             const savedUrl = localStorage.getItem('vendorDataSourceUrl');
             const savedProxySetting = localStorage.getItem('useCorsProxy');
-            
+
             if (savedUrl) {
                 document.getElementById('dataSourceUrl').value = savedUrl;
+            } else {
+                // Use embedded link if user hasn't configured one
+                document.getElementById('dataSourceUrl').value = EMBEDDED_CSV_URL;
+                // Auto-connect so dashboard loads without manual paste (only if no saved URL)
+                connectToDataSource();
             }
-            
+
             if (savedProxySetting !== null) {
                 document.getElementById('useCorsProxy').checked = savedProxySetting === 'true';
-            }
-            
-            if (savedUrl) {
-                connectToDataSource();
             }
         });
 
         async function connectToDataSource() {
             const url = document.getElementById('dataSourceUrl').value.trim();
-            
+
             if (!url) {
                 showError('Please enter a data source URL');
                 return;
@@ -722,7 +735,7 @@
             dataSourceUrl = url;
             localStorage.setItem('vendorDataSourceUrl', url);
             localStorage.setItem('useCorsProxy', document.getElementById('useCorsProxy').checked);
-            
+
             await loadData();
         }
 
@@ -734,112 +747,154 @@
             await loadData();
         }
 
+        // loadData now includes proxy fallback attempts and clearer error reporting
         async function loadData() {
             try {
                 clearError();
                 showLoading('Loading data from Google Sheets...');
-                
-                let fetchUrl = dataSourceUrl;
-                
-                // Use CORS proxy if enabled
+
                 const useCorsProxy = document.getElementById('useCorsProxy').checked;
+                const rawUrl = dataSourceUrl;
+
+                // candidate proxy prefixes (order matters)
+                const proxyPrefixes = [
+                    { name: 'AllOrigins (win)', prefix: 'https://api.allorigins.win/raw?url=' },
+                    { name: 'AllOrigins (cf)', prefix: 'https://api.allorigins.cf/raw?url=' },
+                    { name: 'ThingProxy', prefix: 'https://thingproxy.freeboard.io/fetch/' },
+                    { name: 'CORSProxy (corsproxy.io)', prefix: 'https://corsproxy.io/?' }
+                    // You can add your own reliable proxy here if desired
+                ];
+
+                // helper to attempt fetch and return response.text() or throw
+                async function tryFetch(url) {
+                    const resp = await fetch(url);
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+                    return await resp.text();
+                }
+
+                let csvText = null;
+                let lastError = null;
+                let usedSource = null;
+                const attempts = [];
+
+                // attempt logic
                 if (useCorsProxy) {
-                    // Using allorigins.win as CORS proxy
-                    fetchUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(dataSourceUrl)}`;
+                    for (const p of proxyPrefixes) {
+                        try {
+                            const attemptUrl = p.prefix + encodeURIComponent(rawUrl);
+                            const sep = attemptUrl.includes('?') ? '&' : '?';
+                            const full = attemptUrl + sep + '_=' + new Date().getTime();
+                            attempts.push({source: p.name, url: full});
+                            console.log('Trying proxy:', p.name, full);
+                            csvText = await tryFetch(full);
+                            if (csvText && csvText.trim() !== '') {
+                                usedSource = p.name;
+                                break;
+                            }
+                        } catch (err) {
+                            lastError = err;
+                            console.warn(`Proxy ${p.name} failed:`, err.message);
+                        }
+                    }
                 }
-                
-                // Add cache busting
-                const separator = fetchUrl.includes('?') ? '&' : '?';
-                fetchUrl = fetchUrl + separator + '_=' + new Date().getTime();
-                
-                console.log('Fetching from:', fetchUrl);
-                
-                const response = await fetch(fetchUrl);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+                // if proxies disabled or proxies failed, try direct fetch as last resort
+                if (!csvText) {
+                    try {
+                        const direct = rawUrl + (rawUrl.includes('?') ? '&' : '?') + '_=' + new Date().getTime();
+                        attempts.push({source: 'Direct', url: direct});
+                        console.log('Trying direct fetch:', direct);
+                        csvText = await tryFetch(direct);
+                        usedSource = 'Direct';
+                    } catch (err) {
+                        lastError = err;
+                        console.warn('Direct fetch failed:', err.message);
+                    }
                 }
-                
-                const csvText = await response.text();
-                
+
                 if (!csvText || csvText.trim() === '') {
-                    throw new Error('Received empty data from source');
+                    // Build a helpful error message with attempted sources
+                    let msg = 'Failed to fetch data from the configured source.<br><br>Attempted sources:<ul>';
+                    attempts.forEach(a => {
+                        msg += `<li><code>${escapeHtml(a.source)}</code> — <small>${escapeHtml(a.url)}</small></li>`;
+                    });
+                    msg += '</ul>';
+                    if (lastError) {
+                        msg += `<br>Last error: <code>${escapeHtml(lastError.message)}</code>`;
+                    }
+                    msg += `<br><br>💡 Try these:<ol><li>Ensure "Use CORS Proxy" is checked ✓</li><li>Verify your sheet is published via File → Publish to the web → CSV (/pub?output=csv)</li><li>Open the published CSV URL in a new tab to confirm it returns CSV text</li><li>If public proxies fail repeatedly, host a tiny serverless proxy (Netlify/Vercel) to fetch the sheet and add CORS headers</li></ol>`;
+                    throw new Error(msg);
                 }
-                
-                // Parse CSV using PapaParse library
+
+                // parse CSV using PapaParse
                 Papa.parse(csvText, {
                     header: true,
                     skipEmptyLines: true,
                     complete: function(results) {
                         try {
                             vendorData = processData(results.data);
-                            
+
                             if (vendorData.length === 0) {
                                 throw new Error('No valid data rows found. Check your column headers.');
                             }
-                            
+
                             filteredData = [...vendorData];
-                            
+
                             updateConnectionStatus(true);
                             populateFilters();
                             updateDashboard();
-                            updateLastUpdated();
-                            
-                            console.log(`✅ Successfully loaded ${vendorData.length} records`);
+                            updateLastUpdated(usedSource || 'Unknown');
+
+                            console.log(`✅ Successfully loaded ${vendorData.length} records (via ${usedSource || 'unknown'})`);
                         } catch (error) {
-                            showError(`Data processing error: ${error.message}`);
+                            showError(`Data processing error: ${escapeHtml(error.message)}`);
                             updateConnectionStatus(false);
                         }
                     },
                     error: function(error) {
-                        showError(`CSV parsing error: ${error.message}`);
+                        showError(`CSV parsing error: ${escapeHtml(error.message)}`);
                         updateConnectionStatus(false);
                     }
                 });
-                
+
             } catch (error) {
                 console.error('Error loading data:', error);
-                let errorMsg = `Failed to load data: ${error.message}`;
-                
-                if (error.message.includes('Failed to fetch')) {
-                    errorMsg += '<br><br>💡 <strong>Try this:</strong><br>1. Make sure "Use CORS Proxy" is checked ✓<br>2. Verify your sheet is published (not just shared)<br>3. Check that you selected CSV format when publishing';
-                }
-                
-                showError(errorMsg);
+                // error.message may contain HTML we constructed above
+                showError(error.message || ('Failed to load data: ' + (error.toString ? error.toString() : String(error))));
                 updateConnectionStatus(false);
             }
         }
 
         function processData(rawData) {
             const processed = [];
-            
+
             for (const row of rawData) {
                 // Skip rows without Sr. No.
                 const srNo = row['Sr. No.'] || row['Sr. No'] || row['sr. no.'] || '';
-                if (!srNo || srNo.trim() === '') continue;
-                
+                if (!srNo || srNo.toString().trim() === '') continue;
+
                 // Map columns with flexible matching
                 const processedRow = {
                     'Sr. No.': srNo,
-                    'PO Line Item Number': row['PO Line Item Number'] || row['PO Line'] || '',
-                    'Vendor Name': row['Vendor Name'] || '',
-                    'Work Description': row['Work Description'] || '',
-                    'ALL 4 SITES (5MW) \nWithout GST': row['ALL 4 SITES (5MW) Without GST'] || row['ALL 4 SITES (5MW) \nWithout GST'] || '0',
-                    'Total Paid Amount': row['Total Paid Amount'] || '0',
-                    'Total Balance': row['Total Balance'] || '0',
-                    'Total %': row['Total %'] || '0',
-                    'Total GST Paid': row['Total GST Paid'] || '0',
-                    'Final Status': row['Final Status'] || ''
+                    'PO Line Item Number': row['PO Line Item Number'] || row['PO Line'] || row['PO Line Item'] || '',
+                    'Vendor Name': row['Vendor Name'] || row['Vendor'] || '',
+                    'Work Description': row['Work Description'] || row['Work'] || '',
+                    'ALL 4 SITES (5MW) \\nWithout GST': row['ALL 4 SITES (5MW) Without GST'] || row['ALL 4 SITES (5MW) \\nWithout GST'] || row['Total PO Value'] || row['Total PO'] || '0',
+                    'Total Paid Amount': row['Total Paid Amount'] || row['Paid Amount'] || '0',
+                    'Total Balance': row['Total Balance'] || row['Balance'] || '0',
+                    'Total %': row['Total %'] || row['Payment %'] || row['Payment Percentage'] || '0',
+                    'Total GST Paid': row['Total GST Paid'] || row['GST Paid'] || '0',
+                    'Final Status': row['Final Status'] || row['Status'] || ''
                 };
-                
+
                 processed.push(processedRow);
             }
-            
+
             return processed;
         }
 
         function parseAmount(value) {
-            if (!value) return 0;
+            if (value === null || value === undefined) return 0;
             const cleaned = value.toString().replace(/[^\d.-]/g, '');
             return parseFloat(cleaned) || 0;
         }
@@ -875,18 +930,19 @@
             }
         }
 
-        function updateLastUpdated() {
+        function updateLastUpdated(via) {
             const now = new Date();
             const formatted = now.toLocaleString('en-IN', {
                 dateStyle: 'medium',
                 timeStyle: 'short'
             });
-            document.getElementById('lastUpdated').textContent = `✅ Last updated: ${formatted}`;
+            const viaText = via ? ` (via: ${via})` : '';
+            document.getElementById('lastUpdated').textContent = `✅ Last updated: ${formatted}${viaText}`;
         }
 
         function populateFilters() {
-            const vendors = [...new Set(vendorData.map(row => row['Vendor Name']).filter(v => v && v.trim() !== ''))].sort();
-            const works = [...new Set(vendorData.map(row => row['Work Description']).filter(w => w && w.trim() !== ''))].sort();
+            const vendors = [...new Set(vendorData.map(row => (row['Vendor Name'] || '').toString()).filter(v => v && v.trim() !== ''))].sort();
+            const works = [...new Set(vendorData.map(row => (row['Work Description'] || '').toString()).filter(w => w && w.trim() !== ''))].sort();
 
             const vendorSelect = document.getElementById('vendorFilter');
             vendorSelect.innerHTML = '<option value="">All Vendors</option>';
@@ -917,7 +973,7 @@
                 if (vendorFilter && row['Vendor Name'] !== vendorFilter) return false;
                 if (statusFilter && row['Final Status'] !== statusFilter) return false;
                 if (workFilter && row['Work Description'] !== workFilter) return false;
-                
+
                 if (paymentFilter) {
                     const percent = parseAmount(row['Total %']);
                     if (paymentFilter === '0' && percent !== 0) return false;
@@ -925,7 +981,7 @@
                     if (paymentFilter === '51-99' && (percent <= 50 || percent >= 100)) return false;
                     if (paymentFilter === '100' && percent !== 100) return false;
                 }
-                
+
                 return true;
             });
 
@@ -948,16 +1004,16 @@
         }
 
         function updateKPIs() {
-            const totalPO = filteredData.reduce((sum, row) => sum + parseAmount(row['ALL 4 SITES (5MW) \nWithout GST']), 0);
+            const totalPO = filteredData.reduce((sum, row) => sum + parseAmount(row['ALL 4 SITES (5MW) \\nWithout GST']), 0);
             const totalPaid = filteredData.reduce((sum, row) => sum + parseAmount(row['Total Paid Amount']), 0);
             const totalBalance = filteredData.reduce((sum, row) => sum + parseAmount(row['Total Balance']), 0);
             const totalGST = filteredData.reduce((sum, row) => sum + parseAmount(row['Total GST Paid']), 0);
-            
+
             const completedCount = filteredData.filter(row => row['Final Status'] === 'All Dues Cleared').length;
             const pendingCount = filteredData.filter(row => row['Final Status'] === 'GST/Balance Pending').length;
-            
-            const avgCompletion = filteredData.length > 0 
-                ? filteredData.reduce((sum, row) => sum + parseAmount(row['Total %']), 0) / filteredData.length 
+
+            const avgCompletion = filteredData.length > 0
+                ? filteredData.reduce((sum, row) => sum + parseAmount(row['Total %']), 0) / filteredData.length
                 : 0;
 
             const kpiHTML = `
@@ -998,11 +1054,6 @@
                         <div class="progress-fill" style="width: ${avgCompletion}%"></div>
                     </div>
                 </div>
-                <div class="kpi-card">
-                    <div class="kpi-label">Unique Vendors</div>
-                    <div class="kpi-value">${new Set(filteredData.map(r => r['Vendor Name']).filter(v => v)).size}</div>
-                    <div class="kpi-subtitle">Active partners</div>
-                </div>
             `;
 
             document.getElementById('kpiGrid').innerHTML = kpiHTML;
@@ -1010,214 +1061,216 @@
 
         function updateTable() {
             const tbody = document.getElementById('tableBody');
-            let html = '';
+            if (!filteredData || filteredData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:2rem;">No records found</td></tr>';
+                return;
+            }
 
-            filteredData.forEach(row => {
-                const poValue = parseAmount(row['ALL 4 SITES (5MW) \nWithout GST']);
-                const paidAmount = parseAmount(row['Total Paid Amount']);
-                const balance = parseAmount(row['Total Balance']);
-                const percent = parseAmount(row['Total %']);
-                const status = row['Final Status'];
+            const rows = filteredData.map((row, idx) => {
+                const sr = row['Sr. No.'] || (idx + 1);
+                const poLine = row['PO Line Item Number'] || '';
+                const vendor = row['Vendor Name'] || '';
+                const work = row['Work Description'] || '';
+                const totalPO = formatCurrency(parseAmount(row['ALL 4 SITES (5MW) \\nWithout GST']));
+                const paid = formatCurrency(parseAmount(row['Total Paid Amount']));
+                const balance = formatCurrency(parseAmount(row['Total Balance']));
+                const percent = parseAmount(row['Total %']).toFixed(1) + '%';
+                const statusRaw = (row['Final Status'] || '').toString().trim();
+                let statusClass = '';
+                if (statusRaw === 'All Dues Cleared') statusClass = 'completed';
+                else if (statusRaw === 'GST/Balance Pending') statusClass = 'pending';
+                else statusClass = 'partial';
 
-                let statusClass = 'pending';
-                if (status === 'All Dues Cleared') statusClass = 'completed';
-                else if (percent > 0 && percent < 100) statusClass = 'partial';
-
-                html += `
+                return `
                     <tr>
-                        <td>${row['Sr. No.']}</td>
-                        <td>${row['PO Line Item Number'] || '-'}</td>
-                        <td><strong>${row['Vendor Name'] || '-'}</strong></td>
-                        <td>${row['Work Description'] || '-'}</td>
-                        <td class="amount">${formatCurrency(poValue)}</td>
-                        <td class="amount">${formatCurrency(paidAmount)}</td>
-                        <td class="amount">${formatCurrency(balance)}</td>
-                        <td>
-                            <strong>${percent.toFixed(0)}%</strong>
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${percent}%"></div>
-                            </div>
-                        </td>
-                        <td><span class="status-badge ${statusClass}">${status || 'Unknown'}</span></td>
+                        <td>${sr}</td>
+                        <td>${escapeHtml(poLine)}</td>
+                        <td>${escapeHtml(vendor)}</td>
+                        <td>${escapeHtml(work)}</td>
+                        <td class="amount">${totalPO}</td>
+                        <td class="amount">${paid}</td>
+                        <td class="amount">${balance}</td>
+                        <td>${percent}</td>
+                        <td><span class="status-badge ${statusClass}">${escapeHtml(statusRaw || '—')}</span></td>
                     </tr>
                 `;
             });
 
-            tbody.innerHTML = html || '<tr><td colspan="9" style="text-align: center; padding: 2rem;">No data found</td></tr>';
+            tbody.innerHTML = rows.join('');
         }
 
         function updateCharts() {
-            const statusCounts = {};
-            filteredData.forEach(row => {
-                const status = row['Final Status'] || 'Unknown';
-                statusCounts[status] = (statusCounts[status] || 0) + 1;
+            // Destroy previous charts
+            Object.keys(charts).forEach(k => {
+                try { charts[k]?.destroy(); } catch (e) {}
             });
+            charts = {};
 
-            if (charts.status) charts.status.destroy();
-            charts.status = new Chart(document.getElementById('statusChart'), {
+            // Status distribution
+            const statusCounts = filteredData.reduce((acc, row) => {
+                const s = (row['Final Status'] || 'Unknown').toString();
+                acc[s] = (acc[s] || 0) + 1;
+                return acc;
+            }, {});
+            const statusLabels = Object.keys(statusCounts);
+            const statusValues = statusLabels.map(l => statusCounts[l]);
+
+            const ctxStatus = document.getElementById('statusChart').getContext('2d');
+            charts.statusChart = new Chart(ctxStatus, {
                 type: 'doughnut',
                 data: {
-                    labels: Object.keys(statusCounts),
+                    labels: statusLabels,
                     datasets: [{
-                        data: Object.values(statusCounts),
-                        backgroundColor: ['#10b981', '#f59e0b', '#3b82f6'],
-                        borderWidth: 0
+                        data: statusValues,
+                        backgroundColor: ['#10b981', '#f59e0b', '#3b82f6', '#ef4444'],
+                        hoverOffset: 6
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: { position: 'bottom' }
-                    }
-                }
+                options: { plugins: { legend: { position: 'bottom' } } }
             });
 
-            const vendorAmounts = {};
+            // Top vendors by PO amount
+            const vendorSums = {};
             filteredData.forEach(row => {
-                const vendor = row['Vendor Name'];
-                if (vendor && vendor.trim() !== '') {
-                    const amount = parseAmount(row['ALL 4 SITES (5MW) \nWithout GST']);
-                    vendorAmounts[vendor] = (vendorAmounts[vendor] || 0) + amount;
-                }
+                const v = (row['Vendor Name'] || 'Unknown').toString();
+                const amt = parseAmount(row['ALL 4 SITES (5MW) \\nWithout GST']);
+                vendorSums[v] = (vendorSums[v] || 0) + amt;
             });
+            const vendorEntries = Object.entries(vendorSums).sort((a,b) => b[1] - a[1]).slice(0, 8);
+            const vendorLabels = vendorEntries.map(e => e[0]);
+            const vendorValues = vendorEntries.map(e => e[1]);
 
-            const sortedVendors = Object.entries(vendorAmounts)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 10);
-
-            if (charts.vendor) charts.vendor.destroy();
-            charts.vendor = new Chart(document.getElementById('vendorChart'), {
+            const ctxVendor = document.getElementById('vendorChart').getContext('2d');
+            charts.vendorChart = new Chart(ctxVendor, {
                 type: 'bar',
                 data: {
-                    labels: sortedVendors.map(v => v[0].substring(0, 20)),
+                    labels: vendorLabels,
                     datasets: [{
                         label: 'PO Value (INR)',
-                        data: sortedVendors.map(v => v[1]),
-                        backgroundColor: '#3b82f6',
-                        borderRadius: 6
+                        data: vendorValues,
+                        backgroundColor: '#3b82f6'
                     }]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
                     indexAxis: 'y',
-                    plugins: {
-                        legend: { display: false }
-                    },
+                    plugins: { legend: { display: false } },
                     scales: {
-                        x: {
-                            ticks: {
-                                callback: function(value) {
-                                    return formatCurrency(value);
-                                }
-                            }
-                        }
+                        x: { ticks: { callback: value => formatCurrency(value) } }
                     }
                 }
             });
 
-            const completionRanges = {
-                '0%': 0,
-                '1-25%': 0,
-                '26-50%': 0,
-                '51-75%': 0,
-                '76-99%': 0,
-                '100%': 0
-            };
-
-            filteredData.forEach(row => {
-                const percent = parseAmount(row['Total %']);
-                if (percent === 0) completionRanges['0%']++;
-                else if (percent <= 25) completionRanges['1-25%']++;
-                else if (percent <= 50) completionRanges['26-50%']++;
-                else if (percent <= 75) completionRanges['51-75%']++;
-                else if (percent < 100) completionRanges['76-99%']++;
-                else completionRanges['100%']++;
+            // Completion rate distribution (binned)
+            const bins = { '0%':0, '1-50%':0, '51-99%':0, '100%':0 };
+            filteredData.forEach(r => {
+                const p = parseAmount(r['Total %']);
+                if (p === 0) bins['0%']++;
+                else if (p > 0 && p <= 50) bins['1-50%']++;
+                else if (p > 50 && p < 100) bins['51-99%']++;
+                else if (p === 100) bins['100%']++;
             });
+            const compLabels = Object.keys(bins);
+            const compValues = Object.values(bins);
 
-            if (charts.completion) charts.completion.destroy();
-            charts.completion = new Chart(document.getElementById('completionChart'), {
-                type: 'bar',
+            const ctxComp = document.getElementById('completionChart').getContext('2d');
+            charts.completionChart = new Chart(ctxComp, {
+                type: 'pie',
                 data: {
-                    labels: Object.keys(completionRanges),
+                    labels: compLabels,
                     datasets: [{
-                        label: 'Number of Orders',
-                        data: Object.values(completionRanges),
-                        backgroundColor: ['#ef4444', '#f59e0b', '#fbbf24', '#3b82f6', '#60a5fa', '#10b981'],
-                        borderRadius: 6
+                        data: compValues,
+                        backgroundColor: ['#ef4444','#f59e0b','#3b82f6','#10b981']
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: { display: false }
-                    }
-                }
+                options: { plugins: { legend: { position: 'bottom' } } }
             });
 
-            if (charts.trend) charts.trend.destroy();
-            charts.trend = new Chart(document.getElementById('trendChart'), {
+            // Monthly trend: try to detect a date field; if none, show orders per index as placeholder
+            const dates = filteredData.map(r => {
+                const d = r['Invoice Date'] || r['Date'] || r['Payment Date'] || '';
+                return d ? new Date(d) : null;
+            }).filter(d => d instanceof Date && !isNaN(d));
+            let trendLabels = [];
+            let trendValues = [];
+
+            if (dates.length > 0) {
+                // Group by YYYY-MM
+                const map = {};
+                dates.forEach(d => {
+                    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                    map[key] = (map[key] || 0) + 1;
+                });
+                const entries = Object.entries(map).sort((a,b) => a[0].localeCompare(b[0]));
+                trendLabels = entries.map(e => e[0]);
+                trendValues = entries.map(e => e[1]);
+            } else {
+                // fallback: number of records over index (simple trend)
+                trendLabels = filteredData.map((_,i) => i+1);
+                trendValues = filteredData.map(_ => 1);
+            }
+
+            const ctxTrend = document.getElementById('trendChart').getContext('2d');
+            charts.trendChart = new Chart(ctxTrend, {
                 type: 'line',
                 data: {
-                    labels: ['Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan'],
+                    labels: trendLabels,
                     datasets: [{
-                        label: 'Payments Made',
-                        data: [2500000, 3200000, 4100000, 3800000, 5200000, 4500000, 6800000],
+                        label: 'Orders',
+                        data: trendValues,
                         borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        tension: 0.4,
+                        backgroundColor: 'rgba(59,130,246,0.1)',
+                        tension: 0.25,
                         fill: true
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: { display: false }
-                    },
-                    scales: {
-                        y: {
-                            ticks: {
-                                callback: function(value) {
-                                    return formatCurrency(value);
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
-
-        function searchTable() {
-            const searchTerm = document.getElementById('searchBox').value.toLowerCase();
-            const rows = document.querySelectorAll('#tableBody tr');
-
-            rows.forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(searchTerm) ? '' : 'none';
+                options: { plugins: { legend: { display: false } } }
             });
         }
 
         function exportToCSV() {
-            let csv = 'Sr. No.,PO Line,Vendor Name,Work Description,Total PO Value,Paid Amount,Balance,Payment %,Status\n';
-            
-            filteredData.forEach(row => {
-                const poValue = parseAmount(row['ALL 4 SITES (5MW) \nWithout GST']);
-                const paidAmount = parseAmount(row['Total Paid Amount']);
-                const balance = parseAmount(row['Total Balance']);
-                const percent = parseAmount(row['Total %']);
-                
-                csv += `"${row['Sr. No.']}","${row['PO Line Item Number']}","${row['Vendor Name']}","${row['Work Description']}",${poValue},${paidAmount},${balance},${percent},"${row['Final Status']}"\n`;
-            });
+            if (!filteredData || filteredData.length === 0) {
+                showError('No data to export');
+                return;
+            }
 
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
+            const keys = Object.keys(filteredData[0]);
+            const rows = [keys.join(',')].concat(
+                filteredData.map(r => keys.map(k => `"${(r[k] || '').toString().replace(/"/g,'""')}"`).join(','))
+            );
+            const csv = rows.join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'vendor_payments_export_' + new Date().toISOString().split('T')[0] + '.csv';
+            a.download = 'vendor-data.csv';
             a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function searchTable() {
+            const q = document.getElementById('searchBox')?.value?.toLowerCase()?.trim() || '';
+            if (!q) {
+                filteredData = [...vendorData];
+                updateDashboard();
+                return;
+            }
+
+            filteredData = vendorData.filter(row => {
+                return Object.values(row).some(v => (v || '').toString().toLowerCase().includes(q));
+            });
+
+            updateDashboard();
+        }
+
+        // Utility to escape HTML for table cells and error messages
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            return text.toString()
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
         }
     </script>
 </body>
